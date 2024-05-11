@@ -1,0 +1,114 @@
+cond = ['INP', 'RUNX1']
+rep = ['rep1','rep2']
+
+rule all:
+	input:
+		expand('samples/{condition}_{rep}.sorted.bam.bai', condition=cond,rep=rep),
+		'results/multiqc/multiqc_report_fullFiles.html',
+		'results/correlation_plotFullFiles.png'
+
+rule bowtie2_align:
+	input:
+		samples = 'samples/{condition}_{rep}.fastq.gz'
+	output:
+		bams = 'samples/{condition}_{rep}.bam'
+	threads: 16
+	params:
+		index = 'reference_files/bowtie_index/GRCh38'
+	conda:
+		'envs/bowtie2_env.yml'
+	shell:
+		'''
+		bowtie2 -x {params.index} -U {input.samples} | samtools view -bS - > {output.bams}
+		'''
+
+rule samtools_sort:
+	input:
+		samples = 'samples/{condition}_{rep}.bam'
+	output:
+		sorted_bams = 'samples/{condition}_{rep}.sorted.bam'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		'''
+		samtools sort {input.samples} -o {output.sorted_bams}
+		'''
+
+rule samtools_idx:
+	input:
+		samples = 'samples/{condition}_{rep}.sorted.bam'
+	output:
+		samples_idx = 'samples/{condition}_{rep}.sorted.bam.bai'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		'''
+		samtools index {input.samples} {output.samples_idx}
+		'''
+
+rule samtools_flagstat:
+	input:
+		samples = 'samples/{condition}_{rep}.sorted.bam'
+	output:
+		flagstat = 'results/flagstat/{condition}_{rep}.flagstat.txt'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		'''
+		samtools flagstat {input.samples} > {output.flagstat}
+		'''
+
+rule multiqc:
+	input:
+		samples = expand('results/flagstat/{condition}_{rep}.flagstat.txt', condition=cond, rep=rep)
+	output:
+		report = 'results/multiqc/multiqc_report_fullFiles.html'
+	params:
+		outdir = 'results/multiqc/'
+	conda:
+		'envs/multiqc_env.yml'
+	shell:
+		'''
+		multiqc {input.samples} -o {params.outdir}
+		'''
+
+rule bamCoverage:
+	input:
+		samples = 'samples/{condition}_{rep}.sorted.bam',
+		samples_idx = 'samples/{condition}_{rep}.sorted.bam.bai'
+	output:
+		outfiles = 'results/bigwig/{condition}_{rep}.bw'
+	threads: 4
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		bamCoverage -b {input.samples} -o {output.outfiles}
+		'''
+
+rule multiBwSummary:
+	input:
+		bigwigs = expand('results/bigwig/{condition}_{rep}.bw', condition=cond, rep=rep)
+	output:
+		result = 'results/results.npz'
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		multiBigwigSummary bins -b {input.bigwigs} -o {output.result}
+		'''
+
+rule plotCorrelation:
+	input:
+		bwSum = 'results/results.npz'
+	output:
+		plot = 'results/correlation_plotFullFiles.png'
+	params:
+		corr_type = 'pearson',
+		plot_type = 'scatterplot'
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		plotCorrelation -in {input.bwSum} -c {params.corr_type} -p {params.plot_type} -o {output.plot}
+		'''
