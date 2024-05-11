@@ -1,0 +1,37 @@
+rule all:
+	input:
+		'results/RUNX1_rep1.png',
+		'results/RUNX1_rep2.png'
+
+rule computeMatrix:
+	input:
+		INP1 = 'results/bigwig/RUNX1_rep1.bw',
+		INP2 = 'results/bigwig/RUNX1_rep2.bw',
+		bedFile = 'results/hg38_genes.bed'
+	output:
+		output1 = 'results/matricies/RUNX1_rep1.matrix.gz',
+		output2 = 'results/matricies/RUNX1_rep2.matrix.gz'
+	params:
+	conda:
+		'envs/deeptools_env.yml'
+	threads: 4
+	shell:
+		'''
+		computeMatrix scale-regions -S {input.INP1} -R {input.bedFile} -b 2000 -o {output.output1}
+		computeMatrix scale-regions -S {input.INP2} -R {input.bedFile} -b 2000 -o {output.output2}
+		'''
+
+rule plotMatrix:
+	input:
+		input1 = 'results/matricies/RUNX1_rep1.matrix.gz',
+		input2 = 'results/matricies/RUNX1_rep2.matrix.gz'
+	output:
+		out1 = 'results/RUNX1_rep1.png',
+		out2 = 'results/RUNX1_rep2.png'
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		plotProfile -m {input.input1} -o {output.out1}
+		plotProfile -m {input.input2} -o {output.out2}
+		'''
