@@ -1,0 +1,119 @@
+cond = ['INPsubsample', 'RUNX1subsample']
+rep = ['rep1','rep2']
+
+rule all:
+	input:
+		'results/peaks_motif/annotatedPeaksFullFile.txt',
+		directory('results/peaks_motif/motifsFullFiles/')
+
+rule make_tag_dir:
+	input:
+		samples = 'samples/{condition}_{rep}.sorted.bam'
+	output:
+		out = directory('tag/{condition}_{rep}/')
+	params:
+		outdir = 'tag/{condition}_{rep}/'
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		'''
+		makeTagDirectory {params.outdir} {input.samples}
+		'''
+
+
+rule findPeaks:
+	input:
+		RUNX1 = 'tag/RUNX1_{rep}/',
+		INP = 'tag/INP_{rep}/'
+	output:
+		'tag/called_peaks/{condition}_{rep}.peaks.txt'
+	params:
+		outdir = 'tag/called_peaks/peaksFullFile_{rep}.peaks.txt'
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		'''
+		findPeaks {input.RUNX1} -style factor -o {params.outdir} -i {input.INP}
+		'''
+
+rule convertPeakFiles:
+	input:
+		peaks = 'tag/called_peaks/peaksFullFile_{rep}.peaks.txt'
+	output:
+		outfile = 'tag/bed_file_peaks/peaksFullFile_{rep}.peaks.bed'
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		''' 
+		pos2bed.pl {input.peaks} > {output.outfile}
+		'''
+
+rule intersect_peaks:
+	input:
+		bedfiles1 = 'tag/bed_file_peaks/peaksFullFile_rep1.peaks.bed',
+		bedfiles2 = 'tag/bed_file_peaks/peaksFullFile_rep2.peaks.bed'
+	output:
+		outdir = 'tag/bed_file_peaks/peaksFullFile_intersect.txt'
+	conda:
+		'envs/bedtools_env.yml'
+	shell:
+		'''
+		bedtools intersect -a {input.bedfiles1} -b {input.bedfiles2} > {output.outdir}
+		'''
+
+rule filter_blacklist:
+	input:
+		blacklist_peaks = 'reference_files/hg38-blacklist.v2.bed',
+		mypeaks = 'tag/bed_file_peaks/peaksFullFile_intersect.txt'
+	output:
+		outdir = 'tag/bed_file_peaks/RepQCpeaksFullFile.txt'
+	conda:
+		'envs/bedtools_env.yml'
+	shell:
+		'''
+		bedtools intersect -a {input.mypeaks} -b {input.blacklist_peaks} > {output.outdir}
+		'''
+
+rule unzip_gtf:
+	input:
+		annotation = 'reference_files/gencode.v45.primary_assembly.annotation.gtf.gz'
+	output:
+		unzipped = 'reference_files/gencode.v45.primary_assembly.annotation.gtf'
+	shell:
+		'''
+		gunzip {input.annotation}
+		'''
+
+rule annotate_peaks:
+	input:
+		peaks = 'tag/bed_file_peaks/RepQCpeaksFullFile.txt',
+		genome = 'reference_files/GRCh38.primary_assembly.genome.fa',
+		gtf = 'reference_files/gencode.v45.primary_assembly.annotation.gtf'
+	output:
+		annotated_peaks = 'results/peaks_motif/annotatedPeaksFullFile.txt'
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		'''
+		annotatePeaks.pl {input.peaks} {input.genome} -gtf {input.gtf} > {output.annotated_peaks}
+		'''
+
+rule unzip_genome:
+	input:
+	output:
+	shell:
+		'''
+		'''
+
+rule motifs:
+	input:
+		peaks = 'tag/bed_file_peaks/RepQCpeaksFullFile.txt',
+		genome = 'reference_files/GRCh38.primary_assembly.genome.fa'
+	output:
+		out = directory('results/peaks_motif/motifsFullFiles/')
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		'''
+		findMotifsGenome.pl {input.peaks} {input.genome} {output.out}
+		'''
